@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
+    <title>BellCraft</title>
+    <meta name="description" content="BellCraft — إدارة ذكية للجداول المدرسية والأجراس" />
+    <meta name="application-name" content="BellCraft" />
+    <meta name="robots" content="index, follow" />
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#1d4ed8" />
+
+    <!-- iOS Safari PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="BellCraft" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Non-blocking font load: page paints immediately; font swaps in when ready -->
+    <link rel="preload" as="style"
+          href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap"
+          onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    </noscript>
+    <!-- Inline background prevents any flash before React renders.
+         background-color must be a solid colour (not a gradient) so Android
+         WebView can use it as the initial paint colour — matches backgroundColor
+         in capacitor.config.ts (#f8fafc). -->
+    <style>
+      html, body {
+        margin: 0; padding: 0;
+        background-color: #f8fafc;
+        background: linear-gradient(135deg, #e2e8f0 0%, #f1f5f9 50%, rgba(219,234,254,0.4) 100%);
+        min-height: 100%;
+      }
+      #root { min-height: 100dvh; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

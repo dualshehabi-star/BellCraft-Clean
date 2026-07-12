@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TimetableWidgetProvider metadata.
+
+    Default size : 4 × 4 cells (large — to show the full timetable image)
+    Minimum size : 3 × 3 cells
+    Resizable    : horizontal and vertical
+
+    No auto-update period needed — the widget is refreshed explicitly from
+    the plugin whenever the user exports a new timetable image.
+-->
+<appwidget-provider
+    xmlns:android="http://schemas.android.com/apk/res/android"
+
+    android:minWidth="250dp"
+    android:minHeight="250dp"
+
+    android:targetCellWidth="4"
+    android:targetCellHeight="4"
+
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="180dp"
+
+    android:maxResizeWidth="600dp"
+    android:maxResizeHeight="600dp"
+
+    android:updatePeriodMillis="0"
+
+    android:initialLayout="@layout/widget_timetable"
+    android:previewLayout="@layout/widget_timetable"
+
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+
+    android:description="@string/widget_timetable_description" />

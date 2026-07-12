@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TimetableWidgetProvider layout.
+    Full-size ImageView that displays the saved timetable PNG.
+    A placeholder TextView is shown when no image has been set yet.
+    A holiday badge appears (top-start) when today is a holiday.
+-->
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_timetable_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FFFFFFFF"
+    android:padding="2dp">
+
+    <!-- Timetable image — fills the whole widget, maintains aspect ratio -->
+    <ImageView
+        android:id="@+id/iv_timetable"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:adjustViewBounds="true"
+        android:contentDescription="@string/widget_timetable_description"
+        android:visibility="gone" />
+
+    <!-- Placeholder: shown until the first image is captured -->
+    <TextView
+        android:id="@+id/tv_timetable_placeholder"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="@string/widget_timetable_placeholder"
+        android:textColor="#1E3A8A"
+        android:textSize="13sp"
+        android:gravity="center"
+        android:fontFamily="sans-serif"
+        android:padding="12dp"
+        android:visibility="visible" />
+
+    <!-- Holiday badge — shown top-start when today is NOT a school day -->
+    <TextView
+        android:id="@+id/tv_holiday_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_margin="6dp"
+        android:text="@string/widget_holiday_badge"
+        android:textColor="#FFFFFF"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:fontFamily="sans-serif"
+        android:background="@drawable/widget_holiday_badge_bg"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
+        android:visibility="gone" />
+
+</FrameLayout>

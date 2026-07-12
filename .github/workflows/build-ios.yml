@@ -1,0 +1,50 @@
+name: Build BellCraft iOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: 'API server URL'
+        required: true
+        default: 'https://bell-schedule-manager.replit.app'
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build web app
+        env:
+          VITE_API_BASE_URL: ${{ github.event.inputs.api_url || 'https://bell-schedule-manager.replit.app' }}
+        run: npm run build
+
+      - name: Sync Capacitor iOS
+        run: npm run cap-sync-ios
+
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios/App
+          pod install
+
+      - name: Build for simulator (no signing)
+        run: |
+          xcodebuild             -workspace ios/App/App.xcworkspace             -scheme App             -sdk iphonesimulator             -configuration Debug             -derivedDataPath ios/DerivedData             CODE_SIGNING_ALLOWED=NO             build
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: ios/DerivedData/Logs/Build/
+          retention-days: 7

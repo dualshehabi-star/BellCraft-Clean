@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <!-- ── Native Bell ForegroundService ─────────────────────────── -->
+        <!--
+            BellRingerService plays classic_bell.mp3 via MediaPlayer using
+            USAGE_ALARM — fires even in Silent / DND mode, when app is closed,
+            screen locked, or battery-saver is on.
+        -->
+        <service
+            android:name=".BellRingerService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- ── AlarmManager BroadcastReceiver ────────────────────────── -->
+        <receiver
+            android:name=".BellAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.bellcraft.app.ACTION_BELL" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ── Boot receiver: re-schedule alarms after reboot ─────────── -->
+        <receiver
+            android:name=".BellBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <!-- HTC / OnePlus quick-boot -->
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <!-- Huawei -->
+                <action android:name="com.huawei.systemmanager.optimize.process.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ── Timetable Image Widget ──────────────────────────────────── -->
+        <!--
+            TimetableWidgetProvider shows the last exported timetable PNG on
+            the home screen. The image is stored in internal storage and
+            updated each time the user exports the schedule grid.
+        -->
+        <receiver
+            android:name=".TimetableWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_timetable_info" />
+        </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+
+    </application>
+
+    <!-- ── Permissions ───────────────────────────────────────────────── -->
+
+    <!-- Network access (required for loading web content) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Save images to gallery on Android 9 and below (not needed on Android 10+) -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!-- Bell scheduling: exact alarms that fire even in Doze mode -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
+    <!-- Reschedule bells automatically after device reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Show bell notifications (required on Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Vibrate on bell -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Wake the device when a bell fires -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- ForegroundService (required for BellRingerService) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!-- Request exemption from Doze/battery optimization so exact alarms
+         fire reliably when the screen is off or the app is closed -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+</manifest>
