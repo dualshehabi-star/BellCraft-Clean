@@ -2,8 +2,11 @@ import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, Bell, BellOff, CheckCircle2 } from "lucide-react";
 import { useGetDashboard, useListPeriods, getListPeriodsQueryKey } from "@/lib/api-client";
-import { useDisabledPeriodAlerts } from "@/lib/period-alert-prefs";
-import { ARABIC_DAYS, formatTime } from "@/lib/constants";
+import {
+  useDisabledPeriodAlerts,
+  useDisabledPreEndPeriodAlerts,
+} from "@/lib/period-alert-prefs";
+import { formatTime } from "@/lib/constants";
 
 const ARABIC_DAY_LABELS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 
@@ -22,7 +25,11 @@ function isBreak(p: Period) {
   return !!(p.label?.includes("فسحة") || p.label?.includes("break") || p.label?.includes("استراحة"));
 }
 
-export default function PeriodAlertPicker() {
+export default function PeriodAlertPicker({
+  alertType = "pre-start",
+}: {
+  alertType?: "pre-start" | "pre-end";
+}) {
   const { data: dashboard } = useGetDashboard();
   const activeSchedule = dashboard?.activeSchedule;
   const scheduleId = activeSchedule?.id ?? 0;
@@ -35,7 +42,10 @@ export default function PeriodAlertPicker() {
   });
   const allPeriods: Period[] = Array.isArray(_rawAllPeriods) ? (_rawAllPeriods as Period[]) : [];
 
-  const { disabled, toggle, isEnabled, enableAll, disableAll } = useDisabledPeriodAlerts();
+  const preStartAlerts = useDisabledPeriodAlerts();
+  const preEndAlerts = useDisabledPreEndPeriodAlerts();
+  const { toggle, isEnabled } =
+    alertType === "pre-end" ? preEndAlerts : preStartAlerts;
 
   // Group by day, sorted by startTime
   const byDay: Record<number, Period[]> = {};
@@ -50,22 +60,65 @@ export default function PeriodAlertPicker() {
   // Only show active school days that have at least one period
   const daysToShow = activeDays.filter(d => byDay[d]?.length > 0);
 
-  const totalWithSubject = (allPeriods as Period[]).filter(p => p.subjectId && !isBreak(p)).length;
-  const enabledCount = [...(allPeriods as Period[])]
-    .filter(p => p.subjectId && !isBreak(p) && isEnabled(p.id))
-    .length;
+  const eligiblePeriods = allPeriods.filter(p => p.subjectId && !isBreak(p));
+  const controlPeriods = alertType === "pre-end"
+    ? eligiblePeriods.filter(p => daysToShow.includes(p.dayOfWeek))
+    : eligiblePeriods;
+  const controlIds = controlPeriods.map(p => p.id);
+  const totalWithSubject = controlPeriods.length;
+  const enabledCount = controlPeriods.filter(p => isEnabled(p.id)).length;
+
+  const enableAll = () => {
+    if (alertType === "pre-end") preEndAlerts.enableAll(controlIds);
+    else preStartAlerts.enableAll();
+  };
+  const disableAll = () => {
+    if (alertType === "pre-end") preEndAlerts.disableAll(controlIds);
+    else preStartAlerts.disableAll(controlIds);
+  };
+
+  const pickerTitle = alertType === "pre-end" ? "حصص التنبيه قبل النهاية" : "اختر الحصص";
+  const backHref = alertType === "pre-end"
+    ? "/bell-settings/pre-end"
+    : "/bell-settings/pre-start";
+  const infoText = alertType === "pre-end"
+    ? "فعّل التنبيه للحصص التي تريد سماع الجرس قبل انتهائها. الحصص الفارغة والفسح لا تدعم التنبيه."
+    : "فعّل التنبيه للحصص التي تحتاج تنبيهاً قبلها. الحصص الفارغة والفسح لا تدعم التنبيه.";
+
+  const bulkActions = (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="flex gap-2"
+    >
+      <button
+        type="button"
+        onClick={enableAll}
+        className="flex-1 py-3 rounded-2xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-extrabold tap"
+      >
+        تفعيل الكل
+      </button>
+      <button
+        type="button"
+        onClick={disableAll}
+        className="flex-1 py-3 rounded-2xl border border-slate-200 bg-white text-slate-500 text-sm font-extrabold tap"
+      >
+        تعطيل الكل
+      </button>
+    </motion.div>
+  );
 
   return (
     <div className="space-y-4 pb-6" dir="rtl">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900">اختر الحصص</h1>
+          <h1 className="text-xl font-extrabold text-slate-900">{pickerTitle}</h1>
           <p className="text-sm text-slate-500">
             {enabledCount} من {totalWithSubject} حصة مُفعَّلة
           </p>
         </div>
-        <Link href="/bell-settings/pre-start">
+        <Link href={backHref}>
           <button className="w-10 h-10 rounded-2xl bg-white border border-slate-200 card-shadow flex items-center justify-center tap">
             <ChevronRight className="w-5 h-5 text-slate-600" />
           </button>
@@ -80,9 +133,11 @@ export default function PeriodAlertPicker() {
       >
         <Bell className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
         <p className="text-[11.5px] text-blue-700 leading-relaxed">
-          فعّل التنبيه للحصص التي تحتاج تنبيهاً قبلها. الحصص الفارغة والفسح لا تدعم التنبيه.
+          {infoText}
         </p>
       </motion.div>
+
+      {alertType === "pre-end" && daysToShow.length > 0 && controlIds.length > 0 && bulkActions}
 
       {/* No schedule */}
       {!scheduleId ? (
@@ -121,12 +176,18 @@ export default function PeriodAlertPicker() {
                 const enabled = canToggle ? isEnabled(p.id) : false;
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={p.id}
-                    className={`flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-b-0 transition-colors ${
-                      canToggle ? "cursor-pointer active:bg-slate-50" : "opacity-50"
+                    disabled={!canToggle}
+                    aria-pressed={canToggle ? enabled : undefined}
+                    aria-label={canToggle
+                      ? `${enabled ? "تعطيل" : "تفعيل"} ${alertType === "pre-end" ? "التنبيه قبل نهاية" : "التنبيه قبل بداية"} ${p.subjectName ?? p.label ?? `الحصة ${idx + 1}`}`
+                      : undefined}
+                    className={`w-full text-right flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-b-0 transition-colors ${
+                      canToggle ? "cursor-pointer active:bg-slate-50" : "opacity-50 cursor-default"
                     }`}
-                    onClick={() => canToggle && toggle(p.id)}
+                    onClick={() => toggle(p.id)}
                   >
                     {/* Subject color dot */}
                     <div
@@ -176,7 +237,7 @@ export default function PeriodAlertPicker() {
                         </span>
                       )}
                     </AnimatePresence>
-                  </div>
+                  </button>
                 );
               })}
             </motion.div>
@@ -185,32 +246,7 @@ export default function PeriodAlertPicker() {
       )}
 
       {/* Enable all / disable all */}
-      {daysToShow.length > 0 && totalWithSubject > 0 && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="flex gap-2"
-        >
-          <button
-            onClick={enableAll}
-            className="flex-1 py-3 rounded-2xl border border-blue-200 bg-blue-50 text-blue-700 text-sm font-extrabold tap"
-          >
-            تفعيل الكل
-          </button>
-          <button
-            onClick={() => {
-              const ids = (allPeriods as Period[])
-                .filter(p => p.subjectId && !isBreak(p))
-                .map(p => p.id);
-              disableAll(ids);
-            }}
-            className="flex-1 py-3 rounded-2xl border border-slate-200 bg-white text-slate-500 text-sm font-extrabold tap"
-          >
-            تعطيل الكل
-          </button>
-        </motion.div>
-      )}
+      {alertType === "pre-start" && daysToShow.length > 0 && totalWithSubject > 0 && bulkActions}
     </div>
   );
 }

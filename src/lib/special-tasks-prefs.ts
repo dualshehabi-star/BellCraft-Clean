@@ -15,6 +15,8 @@ const COUNTER_KEY = "bellcraft_st_counter";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type SpecialTaskRepeatType = "once" | "daily" | "specific-days";
+
 export type SpecialTask = {
   id: string;           // UUID — stable across edits
   numericId: number;    // integer used as AlarmManager request code
@@ -25,6 +27,8 @@ export type SpecialTask = {
   bellSound: string;    // BellSound key
   durationSec: number;
   repeatCount: number;
+  repeatType: SpecialTaskRepeatType;
+  repeatDays: number[]; // Sunday=0 … Saturday=6; used by "specific-days"
   completed: boolean;   // true once alarm has fired
 };
 
@@ -44,6 +48,64 @@ const DEFAULT_STORE: SpecialTasksStore = {
 
 export function taskSoundKey(id: string): string {
   return `bellcraft_task_sound_${id}`;
+}
+
+export function localDateString(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Returns the next local-time occurrence for a task. Repeating tasks use
+ * `date` as their start date and continue indefinitely after that date.
+ */
+export function getNextSpecialTaskOccurrence(
+  task: Pick<SpecialTask, "date" | "time" | "repeatType" | "repeatDays">,
+  after = new Date(),
+): Date | null {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(task.date ?? "");
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(task.time ?? "");
+  if (!dateMatch || !timeMatch) return null;
+
+  const [, yearText, monthText, dayText] = dateMatch;
+  const [, hourText, minuteText] = timeMatch;
+  const year = Number(yearText);
+  const month = Number(monthText) - 1;
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (hour > 23 || minute > 59) return null;
+
+  const start = new Date(year, month, day, hour, minute, 0, 0);
+  if (
+    start.getFullYear() !== year ||
+    start.getMonth() !== month ||
+    start.getDate() !== day
+  ) return null;
+
+  const repeatType = task.repeatType ?? "once";
+  if (repeatType === "once") return start.getTime() > after.getTime() ? start : null;
+
+  const repeatDays = Array.isArray(task.repeatDays)
+    ? [...new Set(task.repeatDays.filter(value => Number.isInteger(value) && value >= 0 && value <= 6))]
+    : [];
+  if (repeatType === "specific-days" && repeatDays.length === 0) return null;
+
+  const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const today = new Date(after.getFullYear(), after.getMonth(), after.getDate());
+  if (today.getTime() > cursor.getTime()) cursor.setTime(today.getTime());
+
+  // A daily task needs at most one day; a weekly task needs at most seven.
+  for (let offset = 0; offset <= 7; offset++) {
+    const candidate = new Date(cursor);
+    candidate.setHours(hour, minute, 0, 0);
+    const dayMatches = repeatType === "daily" || repeatDays.includes(candidate.getDay());
+    if (dayMatches && candidate.getTime() > after.getTime()) return candidate;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return null;
 }
 
 // ── Persistent counter (gives each task a unique numeric alarm ID) ────────────
@@ -66,7 +128,26 @@ export function readTasksStore(): SpecialTasksStore {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<SpecialTasksStore>;
-      return { ...DEFAULT_STORE, ...parsed };
+      const tasks = Array.isArray(parsed.tasks)
+        ? parsed.tasks.map(task => {
+            const legacyTask = task as SpecialTask & {
+              repeatType?: SpecialTaskRepeatType;
+              repeatDays?: number[];
+            };
+            const repeatType: SpecialTaskRepeatType =
+              legacyTask.repeatType === "daily" || legacyTask.repeatType === "specific-days"
+                ? legacyTask.repeatType
+                : "once";
+            return {
+              ...legacyTask,
+              repeatType,
+              repeatDays: Array.isArray(legacyTask.repeatDays)
+                ? [...new Set(legacyTask.repeatDays.filter(value => Number.isInteger(value) && value >= 0 && value <= 6))]
+                : [],
+            };
+          })
+        : [];
+      return { ...DEFAULT_STORE, ...parsed, tasks };
     }
   } catch {}
   return { ...DEFAULT_STORE };
@@ -84,8 +165,8 @@ export function writeTasksStore(store: SpecialTasksStore): void {
 // ── Factory ───────────────────────────────────────────────────────────────────
 
 export function makeNewTask(): SpecialTask {
-  const today = new Date().toISOString().split("T")[0];
   const now   = new Date();
+  const today = localDateString(now);
   const hh    = String(now.getHours()).padStart(2, "0");
   const mm    = String(now.getMinutes()).padStart(2, "0");
   return {
@@ -98,6 +179,8 @@ export function makeNewTask(): SpecialTask {
     bellSound:   "classic",
     durationSec: 10,
     repeatCount: 1,
+    repeatType:  "once",
+    repeatDays:  [],
     completed:   false,
   };
 }

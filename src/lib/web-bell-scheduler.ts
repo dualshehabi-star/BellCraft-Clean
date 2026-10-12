@@ -7,19 +7,30 @@
  * Limitations vs. the Android APK:
  *  - Browsers throttle JS timers when the tab is hidden or the screen is locked.
  *  - Therefore, bells may be delayed or missed if the user leaves the tab.
- *  - The APK (Expo) uses scheduled system notifications that bypass this limitation.
+ *  - The Capacitor Android build uses exact AlarmManager alarms and a native
+ *    foreground service to play the sound without relying on browser timers.
  */
 
 import { useEffect, useRef } from "react";
-import { startBellLoop, CUSTOM_SOUND_KEYS, type BellSound } from "./audio";
+import { enqueueScheduledBell, startBellLoop, CUSTOM_SOUND_KEYS, type BellSound } from "./audio";
 import type { BellSettings } from "./bell-store";
-import { getDisabledPeriodAlertIds } from "./period-alert-prefs";
+import {
+  getDisabledPeriodAlertIds,
+  getDisabledPreEndPeriodAlertIds,
+} from "./period-alert-prefs";
 import { readDutyAlertSettings, DUTY_CUSTOM_SOUND_KEY } from "./duty-alert-prefs";
 import {
   readSpecialDutySettings,
   writeSpecialDutySettings,
   SPECIAL_DUTY_CUSTOM_SOUND_KEY,
 } from "./special-duty-prefs";
+import {
+  getNextSpecialTaskOccurrence,
+  localDateString,
+  readTasksStore,
+  taskSoundKey,
+  writeTasksStore,
+} from "./special-tasks-prefs";
 
 function getCustomDataUrl(key: string): string | undefined {
   try {
@@ -122,7 +133,7 @@ export function useWebBellScheduler(
             const disabledIds = getDisabledPeriodAlertIds();
             if (!disabledIds.has(p.id)) {
               const sound = asBellSound(settings.bellSound);
-              startBellLoop(
+              enqueueScheduledBell(
                 sound,
                 settings.volume,
                 settings.ringDurationSec,
@@ -139,14 +150,14 @@ export function useWebBellScheduler(
         }
 
         // ── 2. Pre-end bell ──────────────────────────────────────────────────
-        if (settings.preEndEnabled) {
+        if (settings.preEndEnabled && !getDisabledPreEndPeriodAlertIds().has(p.id)) {
           const before = (settings.preEndMinBefore ?? 5) * 60;
           const target = endSec - before;
           const key = `pre-end-${p.id}-${day}`;
           if (target >= schedulerStart && ns >= target && ns <= target + WINDOW_SEC && !firedRef.current.has(key)) {
             firedRef.current.add(key);
             const sound = asBellSound(settings.preEndSound);
-            startBellLoop(
+            enqueueScheduledBell(
               sound,
               settings.volume,
               settings.preEndDurationSec ?? settings.ringDurationSec,
@@ -167,7 +178,7 @@ export function useWebBellScheduler(
           if (endSec >= schedulerStart && ns >= endSec && ns <= endSec + WINDOW_SEC && !firedRef.current.has(key)) {
             firedRef.current.add(key);
             const sound = asBellSound(settings.endSound);
-            startBellLoop(
+            enqueueScheduledBell(
               sound,
               settings.volume,
               settings.endDurationSec ?? settings.ringDurationSec,
@@ -242,7 +253,7 @@ export function useDutyAlertScheduler(
         const key = `duty-${idx}-${stamp}`;
         if (target >= schedulerStart && ns >= target && ns <= target + WINDOW_SEC && !firedRef.current.has(key)) {
           firedRef.current.add(key);
-          startBellLoop(
+          enqueueScheduledBell(
             asBellSound(duty.bellSound),
             globalSettings.volume,
             duty.ringDurationSec,
@@ -325,5 +336,86 @@ export function useSpecialDutyScheduler(
 
     const id = setInterval(tick, 1_000);
     return () => clearInterval(id);
+  }, [audioUnlocked, globalSettings]);
+}
+
+// ── Special-task scheduler (web foreground only) ──────────────────────────────
+/**
+ * Web Audio can ring special tasks while the BellCraft tab is open and audio
+ * has been unlocked. Android uses its exact native alarms instead.
+ */
+export function useWebSpecialTaskScheduler(
+  audioUnlocked: boolean,
+  globalSettings: BellSettings,
+) {
+  const firedRef = useRef<Set<string>>(new Set());
+  const firedDayRef = useRef(localDateString());
+  const startedAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (!audioUnlocked) return;
+
+    const tick = () => {
+      const now = Date.now();
+      const day = localDateString(new Date(now));
+      if (day !== firedDayRef.current) {
+        firedDayRef.current = day;
+        firedRef.current.clear();
+      }
+
+      const store = readTasksStore();
+      for (const task of store.tasks) {
+        if (!task.enabled || task.completed) continue;
+
+        // Look back only far enough to tolerate interval drift. Never ring
+        // tasks whose due time was already past when this tab opened.
+        const occurrence = getNextSpecialTaskOccurrence(task, new Date(now - WINDOW_SEC * 1000));
+        if (!occurrence) continue;
+        const occurrenceMs = occurrence.getTime();
+        if (
+          occurrenceMs < startedAtRef.current ||
+          occurrenceMs > now ||
+          now - occurrenceMs > WINDOW_SEC * 1000
+        ) continue;
+
+        const occurrenceKey = `${task.id}:${occurrenceMs}`;
+        if (firedRef.current.has(occurrenceKey)) continue;
+        firedRef.current.add(occurrenceKey);
+
+        const sound = asBellSound(task.bellSound);
+        enqueueScheduledBell(
+          sound,
+          globalSettings.maxVolume ? 1 : globalSettings.volume,
+          task.durationSec,
+          {
+            maxVolume: globalSettings.maxVolume ?? false,
+            repeatCount: task.repeatCount ?? 1,
+            customDataUrl: sound === "custom"
+              ? getCustomDataUrl(taskSoundKey(task.id))
+              : undefined,
+          },
+        );
+
+        if (task.repeatType !== "daily" && task.repeatType !== "specific-days") {
+          const latest = readTasksStore();
+          const remaining = latest.autoDeleteCompleted
+            ? latest.tasks.filter(item => item.id !== task.id)
+            : latest.tasks.map(item => item.id === task.id
+              ? { ...item, enabled: false, completed: true }
+              : item);
+          if (latest.autoDeleteCompleted) {
+            try {
+              localStorage.removeItem(taskSoundKey(task.id));
+              localStorage.removeItem(`${taskSoundKey(task.id)}_name`);
+            } catch {}
+          }
+          writeTasksStore({ ...latest, tasks: remaining });
+        }
+      }
+    };
+
+    tick();
+    const interval = window.setInterval(tick, 1000);
+    return () => window.clearInterval(interval);
   }, [audioUnlocked, globalSettings]);
 }

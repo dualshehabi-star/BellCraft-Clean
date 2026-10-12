@@ -11,6 +11,8 @@ import android.os.Build;
 
 import androidx.core.app.ActivityCompat;
 
+import java.util.Calendar;
+
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -28,6 +30,8 @@ import org.json.JSONObject;
  * Exposed methods:
  *   scheduleAlarms({ alarms: AlarmSpec[] })           — cancel all then schedule new set
  *   cancelAll()                                        — cancel all pending alarms
+ *   setDisabledPeriodAlertIds({ periodIds: number[] }) — persist pre-start exclusions
+ *   setDisabledPreEndPeriodAlertIds({ periodIds: number[] }) — persist pre-end exclusions
  *   getScheduledCount()                                — return { count: number }
  *   updateWidgetData({ periodsJson, activeDaysJson })  — push period data to home-screen widget
  *
@@ -86,6 +90,28 @@ public class BellSchedulerPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setDisabledPeriodAlertIds(PluginCall call) {
+        JSArray periodIds = call.getArray("periodIds");
+        getContext()
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString("disabled_prestart_period_ids", periodIds == null ? "[]" : periodIds.toString())
+            .apply();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void setDisabledPreEndPeriodAlertIds(PluginCall call) {
+        JSArray periodIds = call.getArray("periodIds");
+        getContext()
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString("disabled_preend_period_ids", periodIds == null ? "[]" : periodIds.toString())
+            .apply();
+        call.resolve();
+    }
+
+    @PluginMethod
     public void getScheduledCount(PluginCall call) {
         String saved = getContext()
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -129,6 +155,85 @@ public class BellSchedulerPlugin extends Plugin {
 
     // ── Static helpers (also used by BellBootReceiver) ────────────────────
 
+    /**
+     * Compute the next local-time occurrence for a repeating special task.
+     * The saved task date is its start date; recurrence continues indefinitely
+     * from that date, including after a device reboot.
+     */
+    static long nextSpecialTaskTimestamp(JSONObject alarm, long afterMs) {
+        String repeatType = alarm.optString("taskRepeatType", "once");
+        if (!"daily".equals(repeatType) && !"specific-days".equals(repeatType)) return -1L;
+
+        try {
+            String[] dateParts = alarm.optString("taskDate", "").split("-");
+            String[] timeParts = alarm.optString("taskTime", "").split(":");
+            if (dateParts.length != 3 || timeParts.length != 2) return -1L;
+
+            int year = Integer.parseInt(dateParts[0]);
+            int month = Integer.parseInt(dateParts[1]) - 1;
+            int day = Integer.parseInt(dateParts[2]);
+            int hour = Integer.parseInt(timeParts[0]);
+            int minute = Integer.parseInt(timeParts[1]);
+            if (month < 0 || month > 11 || day < 1 || day > 31
+                    || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+                return -1L;
+            }
+
+            Calendar anchor = Calendar.getInstance();
+            anchor.clear();
+            anchor.setLenient(false);
+            anchor.set(year, month, day, hour, minute, 0);
+            long anchorMs = anchor.getTimeInMillis();
+
+            JSONArray repeatDays = alarm.optJSONArray("taskRepeatDays");
+            if ("specific-days".equals(repeatType)
+                    && (repeatDays == null || repeatDays.length() == 0)) {
+                return -1L;
+            }
+
+            Calendar cursor = Calendar.getInstance();
+            cursor.setTimeInMillis(anchorMs);
+            cursor.set(Calendar.HOUR_OF_DAY, 0);
+            cursor.set(Calendar.MINUTE, 0);
+            cursor.set(Calendar.SECOND, 0);
+            cursor.set(Calendar.MILLISECOND, 0);
+
+            Calendar today = Calendar.getInstance();
+            today.setTimeInMillis(afterMs);
+            today.set(Calendar.HOUR_OF_DAY, 0);
+            today.set(Calendar.MINUTE, 0);
+            today.set(Calendar.SECOND, 0);
+            today.set(Calendar.MILLISECOND, 0);
+            if (today.after(cursor)) cursor.setTimeInMillis(today.getTimeInMillis());
+
+            for (int offset = 0; offset <= 7; offset++) {
+                Calendar candidate = (Calendar) cursor.clone();
+                candidate.set(Calendar.HOUR_OF_DAY, hour);
+                candidate.set(Calendar.MINUTE, minute);
+                candidate.set(Calendar.SECOND, 0);
+                candidate.set(Calendar.MILLISECOND, 0);
+
+                boolean dayMatches = "daily".equals(repeatType);
+                if (!dayMatches) {
+                    int dayOfWeek = candidate.get(Calendar.DAY_OF_WEEK) - 1;
+                    for (int i = 0; i < repeatDays.length(); i++) {
+                        if (repeatDays.optInt(i, -1) == dayOfWeek) {
+                            dayMatches = true;
+                            break;
+                        }
+                    }
+                }
+                if (dayMatches && candidate.getTimeInMillis() > afterMs) {
+                    return candidate.getTimeInMillis();
+                }
+                cursor.add(Calendar.DATE, 1);
+            }
+        } catch (Exception ignored) {
+            // Invalid stored task data cannot produce a safe alarm.
+        }
+        return -1L;
+    }
+
     static int scheduleInternal(Context ctx, JSONArray alarms) throws JSONException {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return 0;
@@ -139,7 +244,11 @@ public class BellSchedulerPlugin extends Plugin {
         for (int i = 0; i < alarms.length(); i++) {
             JSONObject a = alarms.getJSONObject(i);
             long ts = a.getLong("timestamp");
-            if (ts <= now) continue;                // skip past alarms
+            if (ts <= now) {
+                ts = nextSpecialTaskTimestamp(a, now);
+                if (ts <= now) continue;
+                a.put("timestamp", ts);
+            }
 
             String label      = a.optString("label", "جرس الحصة 🔔");
             float  volume     = (float) a.optDouble("volume", 1.0);
@@ -161,6 +270,18 @@ public class BellSchedulerPlugin extends Plugin {
             intent.putExtra("repeatCount", repeat);
             intent.putExtra("soundFile",   soundFile);
             intent.putExtra("subjectId",   subjectId);
+            intent.putExtra("periodId",    a.optInt("periodId", -1));
+            intent.putExtra("bellType",    a.optString("bellType", ""));
+            intent.putExtra("alarmId", reqCode);
+            intent.putExtra("scheduledTimestamp", ts);
+            intent.putExtra("taskId", a.optString("taskId", ""));
+            intent.putExtra("taskRepeatType", a.optString("taskRepeatType", "once"));
+            intent.putExtra("taskRepeatDays",
+                    a.optJSONArray("taskRepeatDays") == null
+                            ? "[]"
+                            : a.optJSONArray("taskRepeatDays").toString());
+            intent.putExtra("taskDate", a.optString("taskDate", ""));
+            intent.putExtra("taskTime", a.optString("taskTime", ""));
 
             int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
                     ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
@@ -363,12 +484,27 @@ public class BellSchedulerPlugin extends Plugin {
         String saved = prefs.getString(KEY, "[]");
         try {
             JSONArray alarms = new JSONArray(saved);
-            // Remove past alarms and re-save the future ones
+            // Keep future alarms and move missed recurring occurrences forward.
             JSONArray future = new JSONArray();
             long now = System.currentTimeMillis();
             for (int i = 0; i < alarms.length(); i++) {
                 JSONObject a = alarms.getJSONObject(i);
-                if (a.getLong("timestamp") > now) future.put(a);
+                long timestamp = a.getLong("timestamp");
+                String repeatType = a.optString("taskRepeatType", "once");
+                boolean repeatingTask = !a.optString("taskId", "").isEmpty()
+                        && ("daily".equals(repeatType) || "specific-days".equals(repeatType));
+                if (repeatingTask) {
+                    // A wall-clock recurrence follows the device's current
+                    // timezone, including after a timezone change or reboot.
+                    timestamp = nextSpecialTaskTimestamp(a, now);
+                    if (timestamp <= now) continue;
+                    a.put("timestamp", timestamp);
+                } else if (timestamp <= now) {
+                    timestamp = nextSpecialTaskTimestamp(a, now);
+                    if (timestamp <= now) continue;
+                    a.put("timestamp", timestamp);
+                }
+                future.put(a);
             }
             int count = scheduleInternal(ctx, future);
             // Keep bells_active in sync so BellAlarmReceiver knows whether

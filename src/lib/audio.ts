@@ -217,6 +217,47 @@ export function startBellLoop(
   stopTimer = window.setTimeout(() => stopBell(), durationSec * 1000);
 }
 
+type ScheduledBell = {
+  sound: BellSound;
+  volume: number;
+  durationSec: number;
+  opts?: { maxVolume?: boolean; repeatCount?: number; customDataUrl?: string };
+};
+
+const scheduledBellQueue: ScheduledBell[] = [];
+let scheduledBellPlaying = false;
+
+/**
+ * Queue scheduler-originated bells so simultaneous class and duty alerts do
+ * not stop one another. Manual/test playback continues to use startBellLoop.
+ */
+export function enqueueScheduledBell(
+  sound: BellSound,
+  volume: number,
+  durationSec: number,
+  opts?: { maxVolume?: boolean; repeatCount?: number; customDataUrl?: string },
+): void {
+  scheduledBellQueue.push({ sound, volume, durationSec, opts });
+  if (scheduledBellPlaying) return;
+
+  const playNext = () => {
+    const next = scheduledBellQueue.shift();
+    if (!next) {
+      scheduledBellPlaying = false;
+      return;
+    }
+
+    scheduledBellPlaying = true;
+    startBellLoop(next.sound, next.volume, next.durationSec, next.opts);
+    window.setTimeout(() => {
+      scheduledBellPlaying = false;
+      playNext();
+    }, Math.max(0, next.durationSec * 1000) + 100);
+  };
+
+  playNext();
+}
+
 export function stopBell(): void {
   if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
   if (loopTimer) { clearInterval(loopTimer); loopTimer = null; }

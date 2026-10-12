@@ -135,7 +135,8 @@ function Router() {
           <Route path="/schedules/:id" component={ScheduleDetail} />
           <Route path="/settings" component={Settings} />
           <Route path="/subjects" component={Subjects} />
-          <Route path="/bell-settings/pre-start/periods" component={PeriodAlertPicker} />
+          <Route path="/bell-settings/pre-start/periods" component={() => <PeriodAlertPicker />} />
+          <Route path="/bell-settings/pre-end/periods" component={() => <PeriodAlertPicker alertType="pre-end" />} />
           <Route path="/bell-settings/pre-start" component={() => <BellSettingsAlert alertType="pre-start" />} />
           <Route path="/bell-settings/pre-end" component={() => <BellSettingsAlert alertType="pre-end" />} />
           <Route path="/bell-settings/end" component={() => <BellSettingsAlert alertType="end" />} />

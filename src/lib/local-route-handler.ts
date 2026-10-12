@@ -357,7 +357,7 @@ export function localRouteHandler(
   }
 
   // ── Clear subject assignments on schedule ─────────────────────────────────
-  const clearSubjectsMatch = path.match(/^\/api\/schedules\/(\d+)\/subjects$/);
+  const clearSubjectsMatch = path.match(/^\/api\/schedules\/(\d+)\/subject-assignments$/);
   if (clearSubjectsMatch && m === "DELETE") {
     const id = Number(clearSubjectsMatch[1]);
     savePeriods(d, getPeriods(d).map(p =>

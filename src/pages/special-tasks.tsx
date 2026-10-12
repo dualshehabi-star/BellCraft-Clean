@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import {
   useSpecialTasksStore, makeNewTask, taskSoundKey,
-  type SpecialTask,
+  localDateString, type SpecialTask, type SpecialTaskRepeatType,
 } from "@/lib/special-tasks-prefs";
 import { useBellStore } from "@/lib/bell-store";
 import {
@@ -34,6 +34,20 @@ const DURATION_OPTIONS = [
   { val: 3600, label: "يدوي" },
 ];
 const REPEAT_OPTIONS = [1, 2, 3, 4, 5];
+const TASK_REPEAT_OPTIONS: { value: SpecialTaskRepeatType; label: string }[] = [
+  { value: "once", label: "مرة واحدة" },
+  { value: "daily", label: "يوميًا" },
+  { value: "specific-days", label: "أيام محددة" },
+];
+const WEEK_DAYS = [
+  { value: 0, short: "أحد", label: "الأحد" },
+  { value: 1, short: "إثن", label: "الاثنين" },
+  { value: 2, short: "ثلا", label: "الثلاثاء" },
+  { value: 3, short: "أرب", label: "الأربعاء" },
+  { value: 4, short: "خمي", label: "الخميس" },
+  { value: 5, short: "جمع", label: "الجمعة" },
+  { value: 6, short: "سبت", label: "السبت" },
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -55,9 +69,21 @@ function formatTime12(timeStr: string): string {
   return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function isTaskPast(task: Pick<SpecialTask, "date" | "time">): boolean {
+function isTaskPast(task: Pick<SpecialTask, "date" | "time"> & Partial<Pick<SpecialTask, "repeatType">>): boolean {
   if (!task.date || !task.time) return false;
+  if (task.repeatType === "daily" || task.repeatType === "specific-days") return false;
   return new Date(`${task.date}T${task.time}:00`).getTime() < Date.now();
+}
+
+function repeatSummary(task: SpecialTask): string {
+  if (task.repeatType === "daily") return "تكرار التنبيه: يوميًا";
+  if (task.repeatType === "specific-days") {
+    const selected = WEEK_DAYS.filter(day => task.repeatDays?.includes(day.value)).map(day => day.label);
+    return selected.length
+      ? `تكرار التنبيه: ${selected.join("، ")}`
+      : "تكرار التنبيه: لم تُحدّد أيام";
+  }
+  return "تكرار التنبيه: مرة واحدة";
 }
 
 // ── Toggle ────────────────────────────────────────────────────────────────────
@@ -109,7 +135,11 @@ function TaskCard({
             {task.name || <span className="text-slate-400 font-bold">مهمة بدون اسم</span>}
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
+            {task.repeatType === "once" ? "" : "يبدأ في "}
             {formatArabicDate(task.date)} — {formatTime12(task.time)}
+          </p>
+          <p className="text-[10px] font-bold text-blue-700 mt-1">
+            {repeatSummary(task)}
           </p>
         </div>
         <Toggle on={task.enabled && !task.completed} onChange={onToggle} />
@@ -192,7 +222,8 @@ function TaskModal({
   // ── Validation ──────────────────────────────────────────────────────────────
   const isPast = isTaskPast(task);
   const isEmpty = !task.date || !task.time;
-  const canEnable = !isEmpty && !isPast;
+  const missingRepeatDays = task.repeatType === "specific-days" && task.repeatDays.length === 0;
+  const canEnable = !isEmpty && !isPast && !missingRepeatDays;
 
   // ── Test tone ───────────────────────────────────────────────────────────────
   const handleTestTone = () => {
@@ -256,7 +287,7 @@ function TaskModal({
   };
 
   const sound = (task.bellSound ?? "classic") as BellSound;
-  const today = new Date().toISOString().split("T")[0];
+  const today = localDateString();
 
   return (
     <>
@@ -319,7 +350,11 @@ function TaskModal({
               <p className="text-sm font-extrabold text-slate-900">تفعيل التنبيه</p>
               {!canEnable && !task.completed && (
                 <p className="text-[11px] text-amber-600 mt-0.5">
-                  {isEmpty ? "حدد التاريخ والوقت أولاً" : "الوقت قد مضى"}
+                  {missingRepeatDays
+                    ? "اختر يومًا واحدًا على الأقل"
+                    : isEmpty
+                    ? "حدد التاريخ والوقت أولاً"
+                    : "الوقت قد مضى"}
                 </p>
               )}
             </div>
@@ -337,7 +372,9 @@ function TaskModal({
             </div>
 
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-              <span className="text-sm font-bold text-slate-800">التاريخ</span>
+              <span className="text-sm font-bold text-slate-800">
+                {task.repeatType === "once" ? "التاريخ" : "تاريخ البداية"}
+              </span>
               <input
                 type="date"
                 value={task.date}
@@ -361,6 +398,72 @@ function TaskModal({
                 dir="ltr"
               />
             </div>
+          </div>
+
+          {/* Task recurrence */}
+          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+            <div className="px-4 py-3.5 border-b border-slate-100">
+              <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
+                تكرار التنبيه
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {TASK_REPEAT_OPTIONS.map(option => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={task.repeatType === option.value}
+                    onClick={() => patch({
+                      repeatType: option.value,
+                      repeatDays: option.value === "specific-days" && task.repeatDays.length === 0
+                        ? [new Date().getDay()]
+                        : task.repeatDays,
+                    })}
+                    className={`px-3 py-2 rounded-xl text-xs font-extrabold transition-all tap ${
+                      task.repeatType === option.value
+                        ? "bg-blue-700 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {task.repeatType === "specific-days" && (
+              <div className="px-4 py-3.5">
+                <p className="text-xs font-bold text-slate-600 mb-2">اختر أيام التكرار</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {WEEK_DAYS.map(day => {
+                    const selected = task.repeatDays.includes(day.value);
+                    return (
+                      <button
+                        key={day.value}
+                        type="button"
+                        aria-label={day.label}
+                        aria-pressed={selected}
+                        onClick={() => patch({
+                          repeatDays: selected
+                            ? task.repeatDays.filter(value => value !== day.value)
+                            : [...task.repeatDays, day.value].sort((a, b) => a - b),
+                        })}
+                        className={`py-2 rounded-xl text-xs font-extrabold transition-colors tap ${
+                          selected
+                            ? "bg-blue-700 text-white"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        }`}
+                      >
+                        {day.short}
+                      </button>
+                    );
+                  })}
+                </div>
+                {missingRepeatDays && (
+                  <p className="text-[11px] font-bold text-amber-600 mt-2">
+                    اختر يومًا واحدًا على الأقل لتفعيل التنبيه.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Duration & Repeat */}
@@ -388,7 +491,7 @@ function TaskModal({
 
             <div className="px-4 py-3.5">
               <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
-                عدد التكرار
+                عدد مرات تكرار الصوت
               </p>
               <div className="flex gap-2 flex-wrap">
                 {REPEAT_OPTIONS.map(r => (
@@ -551,7 +654,9 @@ function TaskModal({
           <button
             type="button"
             onClick={handleSave}
+            disabled={missingRepeatDays}
             className="flex-1 py-3 rounded-2xl bg-blue-700 text-white font-extrabold text-sm tap shadow-sm"
+            style={missingRepeatDays ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
           >
             {isNew ? "إضافة" : "حفظ"}
           </button>
@@ -705,7 +810,7 @@ export default function SpecialTasks() {
       <div className="rounded-2xl p-4 bg-blue-50 border border-blue-100 flex items-start gap-3">
         <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
         <p className="text-[11px] text-blue-700 leading-relaxed">
-          يرنّ كل تنبيه مرة واحدة في تاريخه ووقته بغضّ النظر عن وضع الإجازة أو حالة التطبيق. يعمل حتى عند إغلاق التطبيق أو قفل الشاشة.
+          في Android يستمر التنبيه المتكرر تلقائيًا حتى عند إغلاق التطبيق أو إعادة تشغيل الجهاز، بعد منح صلاحيات التنبيهات الدقيقة. في المتصفح يعمل الصوت أثناء بقاء BellCraft مفتوحًا فقط؛ قد يقيّد المتصفح التنبيهات عند إغلاقه.
         </p>
       </div>
 

@@ -221,9 +221,9 @@ export default function BellSettingsAlert({ alertType }: { alertType: AlertType 
           <Toggle on={fields.enabled} onChange={(v) => update("enabled", v)} />
         </div>
 
-        {/* Choose which periods — only for pre-start */}
-        {alertType === "pre-start" && (
-          <Link href="/bell-settings/pre-start/periods">
+        {/* Choose which periods for per-period pre-start/pre-end alerts */}
+        {(alertType === "pre-start" || alertType === "pre-end") && (
+          <Link href={alertType === "pre-end" ? "/bell-settings/pre-end/periods" : "/bell-settings/pre-start/periods"}>
             <motion.div
               whileTap={{ scale: 0.98 }}
               className="flex items-center justify-between px-4 py-3.5 tap cursor-pointer"
@@ -234,7 +234,11 @@ export default function BellSettingsAlert({ alertType }: { alertType: AlertType 
                 </span>
                 <div>
                   <p className="text-sm font-bold text-slate-800">اختر الحصص</p>
-                  <p className="text-[11px] text-slate-400">حدد الحصص التي تريد التنبيه قبلها</p>
+                  <p className="text-[11px] text-slate-400">
+                    {alertType === "pre-end"
+                      ? "حدد الحصص التي تريد التنبيه قبل نهايتها"
+                      : "حدد الحصص التي تريد التنبيه قبلها"}
+                  </p>
                 </div>
               </div>
               <ChevronLeft className="w-4 h-4 text-slate-300" />

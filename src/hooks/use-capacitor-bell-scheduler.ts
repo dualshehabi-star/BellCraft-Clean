@@ -34,6 +34,7 @@ import {
 } from "@/lib/api-client";
 import { isCapacitorAndroid } from "@/lib/capacitor-bell";
 import {
+  buildNativeDutyAlarms,
   scheduleNativeBells,
   saveWidgetData,
   toNativeSoundFile,
@@ -45,7 +46,13 @@ import {
   readTasksStore,
   writeTasksStore,
   SPECIAL_TASK_ALARM_BASE,
+  getNextSpecialTaskOccurrence,
 } from "@/lib/special-tasks-prefs";
+import { PERIOD_ALERT_PREFS_CHANGED_EVENT } from "@/lib/period-alert-prefs";
+import {
+  readDutyAlertSettings,
+  DUTY_ALERT_SETTINGS_CHANGED_EVENT,
+} from "@/lib/duty-alert-prefs";
 
 const COOLDOWN_MS = 10 * 60 * 1_000;
 
@@ -101,6 +108,7 @@ export function useCapacitorBellScheduler() {
 
     const updatedTasks = tasks.filter(task => {
       if (!task.enabled || task.completed || !task.date || !task.time) return true;
+      if (task.repeatType === "daily" || task.repeatType === "specific-days") return true;
       const targetMs = new Date(`${task.date}T${task.time}:00`).getTime();
       if (targetMs < now - GRACE_MS) {
         changed = true;
@@ -125,16 +133,22 @@ export function useCapacitorBellScheduler() {
 
     for (const task of tasks) {
       if (!task.enabled || task.completed || !task.date || !task.time) continue;
-      const ts = new Date(`${task.date}T${task.time}:00`).getTime();
-      if (ts <= now) continue;
+      const nextOccurrence = getNextSpecialTaskOccurrence(task, new Date(now));
+      if (!nextOccurrence) continue;
+      const bellSettings = settingsRef.current;
       alarms.push({
         id:          SPECIAL_TASK_ALARM_BASE + task.numericId,
-        timestamp:   ts,
+        timestamp:   nextOccurrence.getTime(),
         label:       task.name || "تنبيه المهام الخاصة",
-        volume:      1.0,
+        volume:      bellSettings?.maxVolume ? 1 : bellSettings?.volume ?? 1,
         durationSec: task.durationSec,
         repeatCount: task.repeatCount ?? 1,
         soundFile:   toNativeSoundFile(task.bellSound),
+        taskId:      task.id,
+        taskRepeatType: task.repeatType ?? "once",
+        taskRepeatDays: task.repeatDays ?? [],
+        taskDate:    task.date,
+        taskTime:    task.time,
         // No subjectId → native BellAlarmReceiver treats as special alarm,
         // bypasses day-of-week and subject checks, always rings.
       });
@@ -150,8 +164,19 @@ export function useCapacitorBellScheduler() {
     if (!force && now - lastScheduledRef.current < COOLDOWN_MS) return;
     lastScheduledRef.current = now;
 
-    const activeDays  = parseActiveDays();
-    const extraAlarms = buildSpecialTaskAlarms();
+    const activeDays = parseActiveDays();
+    const bellSettings = settingsRef.current;
+    const dutyAlarms = buildNativeDutyAlarms(
+      readDutyAlertSettings(),
+      {
+        vacationMode: bellSettings.vacationMode,
+        volume: bellSettings.volume,
+        maxVolume: bellSettings.maxVolume,
+      },
+      periodsRef.current,
+      activeDays,
+    );
+    const extraAlarms = [...buildSpecialTaskAlarms(), ...dutyAlarms];
 
     // Schedule regular bell alarms + special task alarms in one cancelAll + scheduleAlarms pass
     scheduleNativeBells(
@@ -183,6 +208,33 @@ export function useCapacitorBellScheduler() {
     };
     window.addEventListener("bellcraft:special-tasks-changed", handler);
     return () => window.removeEventListener("bellcraft:special-tasks-changed", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Duty settings live in localStorage; rebuild the full batch immediately
+  // after a shift/day/time change so the old native alarm is cancelled.
+  useEffect(() => {
+    if (!isCapacitorAndroid()) return;
+    const handler = () => {
+      lastScheduledRef.current = 0;
+      doSchedule(true);
+    };
+    window.addEventListener(DUTY_ALERT_SETTINGS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(DUTY_ALERT_SETTINGS_CHANGED_EVENT, handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A period's pre-start preference is local to the device, not API data.
+  // Rebuild native alarms immediately when it changes so disabled alarms that
+  // were already queued are cancelled without waiting for the resume cooldown.
+  useEffect(() => {
+    if (!isCapacitorAndroid()) return;
+    const handler = () => {
+      lastScheduledRef.current = 0;
+      doSchedule(true);
+    };
+    window.addEventListener(PERIOD_ALERT_PREFS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(PERIOD_ALERT_PREFS_CHANGED_EVENT, handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

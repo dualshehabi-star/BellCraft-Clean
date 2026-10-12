@@ -8,6 +8,8 @@ import android.os.Build;
 import android.util.Log;
 
 import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.util.Calendar;
 
@@ -28,10 +30,13 @@ import java.util.Calendar;
  *                           day.  Defence-in-depth against any scenario where
  *                           an alarm was scheduled for a non-school day.
  *
- *   3. Subject guard       — drops the alarm if subjectId == 0 (empty / free
- *                           period with no subject assigned).
- *                           subjectId < 0 means "special / duty alarm" and
- *                           always rings regardless of subject or day.
+ *   3. Per-period alert     — drops a pre-start or pre-end alarm if that
+ *                              period's corresponding alert has been disabled.
+ *
+ *   4. Subject guard        — drops the alarm if subjectId == 0 (empty / free
+ *                              period with no subject assigned).
+ *                              subjectId < 0 means "special / duty alarm" and
+ *                              always rings regardless of subject or day.
  */
 public class BellAlarmReceiver extends BroadcastReceiver {
 
@@ -99,7 +104,49 @@ public class BellAlarmReceiver extends BroadcastReceiver {
             // scheduled correctly and we have no override data to block it.
         }
 
-        // ── Guard 3: subject guard ────────────────────────────────────────
+        // ── Guard 3: per-period pre-start / pre-end preferences ───────────
+        // The persisted lists are updated before native alarms are rebuilt,
+        // so a pending alarm racing with cancellation cannot ring a disabled
+        // period. Other bell types and special-task alarms are not affected.
+        String bellType = intent.getStringExtra("bellType");
+        int periodId = intent.getIntExtra("periodId", -1);
+        if ("pre-start".equals(bellType) && periodId > 0) {
+            String disabledJson = prefs.getString("disabled_prestart_period_ids", "[]");
+            try {
+                JSONArray disabledIds = new JSONArray(disabledJson);
+                for (int i = 0; i < disabledIds.length(); i++) {
+                    if (disabledIds.getInt(i) == periodId) {
+                        Log.d(TAG, "Dropping pre-start alarm — period " + periodId
+                                + " has its alert disabled.");
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                // Fail closed for the pre-start alert only if its preference
+                // data is malformed; do not affect regular or special bells.
+                Log.w(TAG, "Invalid disabled period alert list; dropping pre-start alarm.");
+                return;
+            }
+        }
+        if ("pre-end".equals(bellType) && periodId > 0) {
+            String disabledJson = prefs.getString("disabled_preend_period_ids", "[]");
+            try {
+                JSONArray disabledIds = new JSONArray(disabledJson);
+                for (int i = 0; i < disabledIds.length(); i++) {
+                    if (disabledIds.getInt(i) == periodId) {
+                        Log.d(TAG, "Dropping pre-end alarm — period " + periodId
+                                + " has its alert disabled.");
+                        return;
+                    }
+                }
+            } catch (Exception e) {
+                // Fail closed for this pre-end alert only; do not affect other bells.
+                Log.w(TAG, "Invalid disabled pre-end period alert list; dropping pre-end alarm.");
+                return;
+            }
+        }
+
+        // ── Guard 4: subject guard ────────────────────────────────────────
         // Default -1: field absent → special / duty alarm → always ring.
         // Value   0: empty timetable slot → no class → never ring.
         // Value  >0: real subject assigned → ring normally.
@@ -109,6 +156,11 @@ public class BellAlarmReceiver extends BroadcastReceiver {
                     + "no class scheduled.");
             return;
         }
+
+        // Special-task alarms are single-shot AlarmManager events. Validate
+        // their saved occurrence to drop stale/duplicate broadcasts, then
+        // persist and schedule the next recurrence before starting audio.
+        if (!advanceSpecialTaskAlarm(context, intent)) return;
 
         // All guards passed — start the ringer service.
         Intent svc = new Intent(context, BellRingerService.class);
@@ -123,6 +175,73 @@ public class BellAlarmReceiver extends BroadcastReceiver {
             context.startForegroundService(svc);
         } else {
             context.startService(svc);
+        }
+    }
+
+    private boolean advanceSpecialTaskAlarm(Context context, Intent intent) {
+        String taskId = intent.getStringExtra("taskId");
+        if (taskId == null || taskId.isEmpty()) return true;
+
+        int alarmId = intent.getIntExtra("alarmId", -1);
+        long scheduledTimestamp = intent.getLongExtra("scheduledTimestamp", -1L);
+        if (alarmId < 0 || scheduledTimestamp <= 0) {
+            Log.w(TAG, "Dropping special-task alarm with missing occurrence metadata.");
+            return false;
+        }
+
+        SharedPreferences prefs = context.getSharedPreferences(
+                BellSchedulerPlugin.PREFS, Context.MODE_PRIVATE);
+        try {
+            JSONArray saved = new JSONArray(prefs.getString(BellSchedulerPlugin.KEY, "[]"));
+            JSONArray updated = new JSONArray();
+            JSONObject matchingAlarm = null;
+            boolean matchingIdSeen = false;
+
+            for (int i = 0; i < saved.length(); i++) {
+                JSONObject alarm = saved.getJSONObject(i);
+                if (alarm.optInt("id", -1) == alarmId) {
+                    matchingIdSeen = true;
+                    if (!taskId.equals(alarm.optString("taskId", ""))
+                            || alarm.optLong("timestamp", -1L) != scheduledTimestamp) {
+                        Log.d(TAG, "Dropping stale or duplicate special-task alarm.");
+                        return false;
+                    }
+                    matchingAlarm = alarm;
+                } else {
+                    updated.put(alarm);
+                }
+            }
+
+            if (!matchingIdSeen || matchingAlarm == null) {
+                Log.d(TAG, "Dropping special-task alarm no longer in the active schedule.");
+                return false;
+            }
+
+            String repeatType = matchingAlarm.optString("taskRepeatType", "once");
+            if ("daily".equals(repeatType) || "specific-days".equals(repeatType)) {
+                long nextTimestamp = BellSchedulerPlugin.nextSpecialTaskTimestamp(
+                        matchingAlarm, System.currentTimeMillis());
+                if (nextTimestamp > System.currentTimeMillis()) {
+                    matchingAlarm.put("timestamp", nextTimestamp);
+                    updated.put(matchingAlarm);
+                    // Commit before setting the alarm so a duplicate broadcast
+                    // cannot ring twice for the same occurrence.
+                    prefs.edit().putString(BellSchedulerPlugin.KEY, updated.toString()).commit();
+                    JSONArray nextAlarm = new JSONArray();
+                    nextAlarm.put(matchingAlarm);
+                    BellSchedulerPlugin.scheduleInternal(context, nextAlarm);
+                    return true;
+                }
+                Log.w(TAG, "No valid future recurrence found; stopping this task alarm.");
+            }
+
+            // One-time tasks are consumed; repeating tasks with invalid
+            // recurrence data are also removed instead of looping forever.
+            prefs.edit().putString(BellSchedulerPlugin.KEY, updated.toString()).commit();
+            return true;
+        } catch (JSONException e) {
+            Log.e(TAG, "Unable to validate special-task alarm; dropping it.", e);
+            return false;
         }
     }
 }

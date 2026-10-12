@@ -4,9 +4,10 @@
  * Stored in localStorage so no API round-trip is needed.
  * Supports two independently-configurable duty shifts (فسحة 1 + فسحة 2).
  */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 
 export const DUTY_CUSTOM_SOUND_KEY = "bellcraft_custom_sound_duty";
+export const DUTY_ALERT_SETTINGS_CHANGED_EVENT = "bellcraft:duty-alert-settings-changed";
 const SETTINGS_KEY = "bellcraft_duty_alert";
 
 export type DutyShift = {
@@ -44,31 +45,33 @@ export function readDutyAlertSettings(): DutyAlertSettings {
 
 function write(s: DutyAlertSettings) {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch {}
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(DUTY_ALERT_SETTINGS_CHANGED_EVENT));
+  }
 }
 
 /** React hook — provides reactive duty alert settings. */
 export function useDutyAlertSettings() {
   const [settings, setSettings] = useState<DutyAlertSettings>(readDutyAlertSettings);
+  const settingsRef = useRef(settings);
 
   const update = useCallback((patch: Partial<Omit<DutyAlertSettings, "shifts">>) => {
-    setSettings(prev => {
-      const next = { ...prev, ...patch };
-      write(next);
-      return next;
-    });
+    const next = { ...settingsRef.current, ...patch };
+    settingsRef.current = next;
+    setSettings(next);
+    write(next);
   }, []);
 
   const updateShift = useCallback((idx: 0 | 1, patch: Partial<DutyShift>) => {
-    setSettings(prev => {
-      const shifts: [DutyShift, DutyShift] = [
-        { ...prev.shifts[0] },
-        { ...prev.shifts[1] },
-      ];
-      shifts[idx] = { ...shifts[idx], ...patch };
-      const next = { ...prev, shifts };
-      write(next);
-      return next;
-    });
+    const shifts: [DutyShift, DutyShift] = [
+      { ...settingsRef.current.shifts[0] },
+      { ...settingsRef.current.shifts[1] },
+    ];
+    shifts[idx] = { ...shifts[idx], ...patch };
+    const next = { ...settingsRef.current, shifts };
+    settingsRef.current = next;
+    setSettings(next);
+    write(next);
   }, []);
 
   return { settings, update, updateShift };

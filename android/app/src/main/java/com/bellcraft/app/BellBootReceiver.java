@@ -15,14 +15,21 @@ public class BellBootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-        if (!Intent.ACTION_BOOT_COMPLETED.equals(action)
-                && !"android.intent.action.QUICKBOOT_POWERON".equals(action)) {
+        boolean bootAction = Intent.ACTION_BOOT_COMPLETED.equals(action)
+                || "android.intent.action.QUICKBOOT_POWERON".equals(action)
+                || "com.huawei.systemmanager.optimize.process.action.BOOT_COMPLETED".equals(action);
+        boolean clockChanged = Intent.ACTION_TIMEZONE_CHANGED.equals(action)
+                || Intent.ACTION_TIME_CHANGED.equals(action);
+        if (!bootAction && !clockChanged) {
             return;
         }
-        // Re-apply all bell alarms from SharedPreferences
+        // Re-apply alarms from SharedPreferences. Repeating task alarms are
+        // recalculated from their saved local date/time and selected weekdays.
         BellSchedulerPlugin.rescheduleFromPrefs(context);
 
-        // Refresh the timetable image widget with any previously saved image.
-        TimetableWidgetProvider.refreshAll(context);
+        if (bootAction) {
+            // Refresh the timetable image widget with any previously saved image.
+            TimetableWidgetProvider.refreshAll(context);
+        }
     }
 }

@@ -14,13 +14,18 @@
  *
  * Alarm types per period (each independently enabled/disabled by settings):
  *   pre-start  — fires (leadTimeMin or per-period alertMinutesBefore) before startTime (if preStartEnabled)
- *   pre-end    — fires preEndMinBefore minutes before endTime (if preEndEnabled)
+ *   pre-end    — fires preEndMinBefore minutes before endTime for enabled periods
  *   end        — fires exactly at endTime (if endEnabled)
  *
  * Empty periods (no subjectId assigned) are always skipped.
  */
 
 import { registerPlugin } from "@capacitor/core";
+import {
+  getDisabledPeriodAlertIds,
+  getDisabledPreEndPeriodAlertIds,
+} from "./period-alert-prefs";
+import type { DutyAlertSettings } from "./duty-alert-prefs";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -50,11 +55,22 @@ export interface NativeAlarm {
    *   absent/undefined → special alarm (duty, test) — always ring.
    */
   subjectId?: number;
+  /** Used by the native receiver to recheck individual pre-start/pre-end preferences. */
+  periodId?: number;
+  bellType?: "pre-start" | "pre-end" | "end";
+  /** Persistent special-task recurrence metadata; used by Android to rearm after each fire. */
+  taskId?: string;
+  taskRepeatType?: "once" | "daily" | "specific-days";
+  taskRepeatDays?: number[];
+  taskDate?: string;
+  taskTime?: string;
 }
 
 interface BellSchedulerPlugin {
   scheduleAlarms(options: { alarms: NativeAlarm[] }): Promise<{ scheduled: number }>;
   cancelAll(): Promise<void>;
+  setDisabledPeriodAlertIds(options: { periodIds: number[] }): Promise<void>;
+  setDisabledPreEndPeriodAlertIds(options: { periodIds: number[] }): Promise<void>;
   getScheduledCount(): Promise<{ count: number }>;
   /** Push period data to the home-screen widget (Android only). */
   updateWidgetData(options: {
@@ -76,6 +92,8 @@ class BellSchedulerWeb implements BellSchedulerPlugin {
     return Promise.resolve({ scheduled: 0 });
   }
   cancelAll() { return Promise.resolve(); }
+  setDisabledPeriodAlertIds(_opts: { periodIds: number[] }) { return Promise.resolve(); }
+  setDisabledPreEndPeriodAlertIds(_opts: { periodIds: number[] }) { return Promise.resolve(); }
   getScheduledCount() { return Promise.resolve({ count: 0 }); }
   updateWidgetData(_opts: { periodsJson: string; activeDaysJson: string }) {
     return Promise.resolve();
@@ -193,6 +211,71 @@ export function toNativeSoundFile(bellSound?: string | null): string {
   }
 }
 
+/** Separate request-code range; school bells end below 1.4M and task alarms start at 9M. */
+export const DUTY_ALARM_ID_BASE = 8_000_000;
+
+/**
+ * Build exact alarms for the two configured duty shifts over the same rolling
+ * window as the school bells. Each shift is tied to its selected timetable
+ * period so edits to that period's start time are reflected on the next build.
+ */
+export function buildNativeDutyAlarms(
+  duty: DutyAlertSettings,
+  bellSettings: Pick<NativeBellSettings, "vacationMode" | "volume" | "maxVolume">,
+  periods: SchedulePeriod[],
+  activeDays: number[],
+  daysAhead = 14,
+  now = Date.now(),
+): NativeAlarm[] {
+  if (!duty?.enabled || bellSettings.vacationMode) return [];
+
+  const activeDaySet = new Set(Array.isArray(activeDays) ? activeDays : []);
+  const periodsById = new Map(
+    (Array.isArray(periods) ? periods : []).map((period) => [period.id, period]),
+  );
+  const shifts = Array.isArray(duty.shifts) ? duty.shifts : [];
+  const alarms: NativeAlarm[] = [];
+  const seenTimestamps = new Set<number>();
+  const count = Number.isFinite(daysAhead) ? Math.max(0, Math.floor(daysAhead)) : 14;
+
+  for (let dayOffset = 0; dayOffset < count; dayOffset++) {
+    const day = new Date(now);
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() + dayOffset);
+    const dow = day.getDay();
+    if (!activeDaySet.has(dow)) continue;
+
+    for (let idx = 0; idx < 2; idx++) {
+      const shift = shifts[idx];
+      if (!shift || shift.dayOfWeek !== dow || shift.periodId == null) continue;
+
+      const period = periodsById.get(shift.periodId);
+      if (!period || period.dayOfWeek !== dow || !period.startTime) continue;
+      const [hours, minutes] = period.startTime.split(":").map(Number);
+      if (
+        !Number.isInteger(hours) || hours < 0 || hours > 23 ||
+        !Number.isInteger(minutes) || minutes < 0 || minutes > 59
+      ) continue;
+
+      const timestamp = toTimestamp(day, period.startTime);
+      if (timestamp <= now || seenTimestamps.has(timestamp)) continue;
+      seenTimestamps.add(timestamp);
+
+      alarms.push({
+        id: DUTY_ALARM_ID_BASE + dayOffset * 2 + idx,
+        timestamp,
+        label: idx === 0 ? "🔔 تنبيه المناوبة — الفسحة الأولى" : "🔔 تنبيه المناوبة — الفسحة الثانية",
+        volume: bellSettings.maxVolume ? 1.0 : (bellSettings.volume ?? 1.0),
+        durationSec: duty.ringDurationSec ?? 6,
+        repeatCount: duty.repeatCount ?? 1,
+        soundFile: toNativeSoundFile(duty.bellSound),
+      });
+    }
+  }
+
+  return alarms;
+}
+
 // ── Core scheduler ─────────────────────────────────────────────────────────
 
 /**
@@ -218,15 +301,33 @@ export async function scheduleNativeBells(
   periods = safePeriods;       // eslint-disable-line no-param-reassign
   activeDays = safeActiveDays; // eslint-disable-line no-param-reassign
 
+  const disabledPeriodAlertIds = getDisabledPeriodAlertIds();
+  const disabledPreEndPeriodAlertIds = getDisabledPreEndPeriodAlertIds();
+
+  // Persist per-period choices natively before cancellation/re-scheduling.
+  // The receiver is a final guard against an alarm racing with the update.
+  await Promise.all([
+    BellScheduler.setDisabledPeriodAlertIds({
+      periodIds: [...disabledPeriodAlertIds],
+    }).catch((err) => {
+      console.error("[BellScheduler] setDisabledPeriodAlertIds failed:", err);
+    }),
+    BellScheduler.setDisabledPreEndPeriodAlertIds({
+      periodIds: [...disabledPreEndPeriodAlertIds],
+    }).catch((err) => {
+      console.error("[BellScheduler] setDisabledPreEndPeriodAlertIds failed:", err);
+    }),
+  ]);
+
   // Always cancel first — ensures stale alarms are removed even when disabling.
   await BellScheduler.cancelAll().catch(() => {});
 
   const now = Date.now();
   const allAlarms: NativeAlarm[] = [];
 
-  // ── Extra one-shot alarms (special tasks) ────────────────────────────────
-  // These always schedule regardless of vacation mode or autoRing — they are
-  // personal tasks independent of the school bell system.
+  // ── Extra alerts (special tasks and duty shifts) ────────────────────────
+  // These schedule independently of vacation mode and autoRing. Special-task
+  // recurrences rearm natively after each occurrence.
   for (const extra of extraAlarms) {
     if (extra.timestamp > now) allAlarms.push(extra);
   }
@@ -263,7 +364,7 @@ export async function scheduleNativeBells(
         const startTs = toTimestamp(base, period.startTime ?? "00:00");
         const endTs   = toTimestamp(base, period.endTime   ?? "00:00");
 
-        if (settings.preStartEnabled) {
+        if (settings.preStartEnabled && !disabledPeriodAlertIds.has(pId)) {
           const leadMin =
             period.alertMinutesBefore != null && period.alertMinutesBefore > 0
               ? period.alertMinutesBefore
@@ -276,12 +377,17 @@ export async function scheduleNativeBells(
                 timestamp: ts, label: pLabel, volume,
                 durationSec: durSec, repeatCount: startRepeat,
                 soundFile: mainSoundFile, subjectId,
+                periodId: pId, bellType: "pre-start",
               });
             }
           }
         }
 
-        if (settings.preEndEnabled && (settings.preEndMinBefore ?? 0) > 0) {
+        if (
+          settings.preEndEnabled &&
+          !disabledPreEndPeriodAlertIds.has(pId) &&
+          (settings.preEndMinBefore ?? 0) > 0
+        ) {
           const ts = endTs - (settings.preEndMinBefore ?? 5) * 60_000;
           if (ts > now) {
             allAlarms.push({
@@ -290,6 +396,7 @@ export async function scheduleNativeBells(
               label: `⏰ ${period.name ? period.name : "نهاية الحصة قريبًا"}`,
               volume, durationSec: preEndDur, repeatCount: preEndRpt,
               soundFile: preEndSoundFile, subjectId,
+              periodId: pId, bellType: "pre-end",
             });
           }
         }
@@ -307,13 +414,14 @@ export async function scheduleNativeBells(
     }
   }
 
-  if (allAlarms.length > 0) {
-    try {
-      const result = await BellScheduler.scheduleAlarms({ alarms: allAlarms });
-      void result;
-    } catch (err) {
-      console.error("[BellScheduler] scheduleAlarms failed:", err);
-    }
+  try {
+    // Also submit an empty schedule. This clears the native saved alarm list
+    // and leaves the persisted per-period state in sync when per-period alerts
+    // are disabled.
+    const result = await BellScheduler.scheduleAlarms({ alarms: allAlarms });
+    void result;
+  } catch (err) {
+    console.error("[BellScheduler] scheduleAlarms failed:", err);
   }
 }
 

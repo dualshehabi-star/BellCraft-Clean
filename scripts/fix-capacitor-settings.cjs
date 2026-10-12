@@ -29,21 +29,21 @@ def resolveCapacitorDir(candidates) {
 include ':capacitor-android'
 project(':capacitor-android').projectDir = resolveCapacitorDir([
     '../node_modules/@capacitor/android/capacitor',
-    '../../../node_modules/.pnpm/@capacitor+android@8.4.0_@capacitor+core@8.4.0/node_modules/@capacitor/android/capacitor',
+    '../../../node_modules/.pnpm/@capacitor+android@8.5.3_@capacitor+core@8.5.3/node_modules/@capacitor/android/capacitor',
     '../../../node_modules/@capacitor/android/capacitor',
 ])
 
 include ':capacitor-app'
 project(':capacitor-app').projectDir = resolveCapacitorDir([
     '../node_modules/@capacitor/app/android',
-    '../../../node_modules/.pnpm/@capacitor+app@8.1.0_@capacitor+core@8.4.0/node_modules/@capacitor/app/android',
+    '../../../node_modules/.pnpm/@capacitor+app@8.1.0_@capacitor+core@8.5.3/node_modules/@capacitor/app/android',
     '../../../node_modules/@capacitor/app/android',
 ])
 
 include ':capacitor-local-notifications'
 project(':capacitor-local-notifications').projectDir = resolveCapacitorDir([
     '../node_modules/@capacitor/local-notifications/android',
-    '../../../node_modules/.pnpm/@capacitor+local-notifications@8.2.0_@capacitor+core@8.4.0/node_modules/@capacitor/local-notifications/android',
+    '../../../node_modules/.pnpm/@capacitor+local-notifications@8.2.0_@capacitor+core@8.5.3/node_modules/@capacitor/local-notifications/android',
     '../../../node_modules/@capacitor/local-notifications/android',
 ])
 `;

@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import java.util.ArrayDeque;
 
 /**
  * BellRingerService — ForegroundService that plays the bell sound.
@@ -35,6 +36,10 @@ public class BellRingerService extends Service {
 
     private MediaPlayer mediaPlayer;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final ArrayDeque<BellRequest> pendingBells = new ArrayDeque<>();
+    private boolean isPlayingBell;
+    private int playbackToken;
+    private Runnable playbackSafetyTimeout;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -55,8 +60,10 @@ public class BellRingerService extends Service {
             // Empty / free period — must not ring. Call startForeground first
             // (Android 12+ requires it within 5 s even if we stop immediately),
             // then stop ourselves.
-            startForeground(NOTIF_ID, buildNotification("بيل كرافت"));
-            stopSelf();
+            if (!isPlayingBell && pendingBells.isEmpty()) {
+                startForeground(NOTIF_ID, buildNotification("بيل كرافت"));
+                stopSelf();
+            }
             return START_NOT_STICKY;
         }
 
@@ -66,16 +73,24 @@ public class BellRingerService extends Service {
         int    repeat     = intent != null ? intent.getIntExtra("repeatCount",      1) : 1;
         String soundFile  = intent != null ? intent.getStringExtra("soundFile")        : null;
 
-        // Must call startForeground quickly (within 5 s on Android 12+)
-        startForeground(NOTIF_ID, buildNotification(label != null ? label : "جرس الحصة 🔔"));
-
-        playBell(volume, durSec, repeat, soundFile);
+        pendingBells.addLast(new BellRequest(
+                label != null ? label : "جرس الحصة 🔔",
+                volume,
+                durSec,
+                repeat,
+                soundFile));
+        // Must call startForeground quickly (within 5 s on Android 12+).
+        startForeground(NOTIF_ID, buildNotification(pendingBells.peekFirst().label));
+        if (!isPlayingBell) playNextBell();
         return START_NOT_STICKY;
     }
 
     @Override
     public void onDestroy() {
         handler.removeCallbacksAndMessages(null);
+        pendingBells.clear();
+        isPlayingBell = false;
+        playbackToken++;
         releasePlayer();
         super.onDestroy();
     }
@@ -108,7 +123,17 @@ public class BellRingerService extends Service {
         }
     }
 
-    private void playBell(float volume, int durSec, int repeatCount, String soundFile) {
+    private void playNextBell() {
+        BellRequest request = pendingBells.pollFirst();
+        if (request == null) {
+            isPlayingBell = false;
+            stopSelf();
+            return;
+        }
+
+        isPlayingBell = true;
+        final int token = ++playbackToken;
+        startForeground(NOTIF_ID, buildNotification(request.label));
         try {
             releasePlayer();
 
@@ -126,16 +151,16 @@ public class BellRingerService extends Service {
             mediaPlayer.setAudioAttributes(attrs);   // ← must be before prepare()
 
             AssetFileDescriptor afd =
-                    getResources().openRawResourceFd(getSoundResource(soundFile));
-            if (afd == null) { stopSelf(); return; }
+                    getResources().openRawResourceFd(getSoundResource(request.soundFile));
+            if (afd == null) { finishBell(token); return; }
             mediaPlayer.setDataSource(
                     afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
             afd.close();
 
             mediaPlayer.prepare();                   // ← after setAudioAttributes()
-            mediaPlayer.setVolume(volume, volume);
+            mediaPlayer.setVolume(request.volume, request.volume);
 
-            final int[] left = { repeatCount };
+            final int[] left = { request.repeatCount };
 
             mediaPlayer.setOnCompletionListener(mp -> {
                 left[0]--;
@@ -143,26 +168,60 @@ public class BellRingerService extends Service {
                     mp.seekTo(0);
                     mp.start();
                 } else {
-                    stopSelf();
+                    finishBell(token);
                 }
             });
 
+            mediaPlayer.setOnErrorListener((mp, what, extra) -> {
+                finishBell(token);
+                return true;
+            });
             mediaPlayer.start();
 
             // Safety timeout: stop even if completion listener never fires
-            long safetyMs = ((long) durSec * repeatCount + 3) * 1000L;
-            handler.postDelayed(this::stopSelf, safetyMs);
+            long safetyMs = ((long) request.durationSec * request.repeatCount + 3) * 1000L;
+            playbackSafetyTimeout = () -> finishBell(token);
+            handler.postDelayed(playbackSafetyTimeout, safetyMs);
 
         } catch (Exception e) {
-            stopSelf();
+            finishBell(token);
         }
+    }
+
+    private void finishBell(int token) {
+        if (token != playbackToken || !isPlayingBell) return;
+        if (playbackSafetyTimeout != null) {
+            handler.removeCallbacks(playbackSafetyTimeout);
+            playbackSafetyTimeout = null;
+        }
+        releasePlayer();
+        isPlayingBell = false;
+        playNextBell();
     }
 
     private void releasePlayer() {
         if (mediaPlayer != null) {
+            mediaPlayer.setOnCompletionListener(null);
+            mediaPlayer.setOnErrorListener(null);
             try { if (mediaPlayer.isPlaying()) mediaPlayer.stop(); } catch (Exception ignored) {}
             mediaPlayer.release();
             mediaPlayer = null;
+        }
+    }
+
+    private static final class BellRequest {
+        final String label;
+        final float volume;
+        final int durationSec;
+        final int repeatCount;
+        final String soundFile;
+
+        BellRequest(String label, float volume, int durationSec, int repeatCount, String soundFile) {
+            this.label = label;
+            this.volume = volume;
+            this.durationSec = durationSec;
+            this.repeatCount = repeatCount;
+            this.soundFile = soundFile;
         }
     }
 

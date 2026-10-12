@@ -8,6 +8,7 @@ import {
   useClearSubjectAssignments,
   getListPeriodsQueryKey,
 } from "@/lib/api-client";
+import { useToast } from "@/hooks/use-toast";
 import { ARABIC_DAYS, formatTime } from "@/lib/constants";
 
 type Period = {
@@ -48,6 +49,7 @@ export function TimetableGrid({ scheduleId, activeDays: _activeDays, allPeriods:
   const activeDays = Array.isArray(_activeDays) ? _activeDays : [];
   const allPeriods = Array.isArray(_allPeriods) ? _allPeriods : [];
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { data: _rawSubjects } = useListSubjects();
   const subjects = Array.isArray(_rawSubjects) ? _rawSubjects : [];
   const updatePeriod = useUpdatePeriod();
@@ -98,9 +100,17 @@ export function TimetableGrid({ scheduleId, activeDays: _activeDays, allPeriods:
   };
 
   const handleClearConfirmed = async () => {
-    await clearAssignments.mutateAsync({ scheduleId });
-    queryClient.invalidateQueries({ queryKey: getListPeriodsQueryKey(scheduleId) });
-    setShowConfirm(false);
+    try {
+      await clearAssignments.mutateAsync({ scheduleId });
+      await queryClient.invalidateQueries({ queryKey: getListPeriodsQueryKey(scheduleId) });
+      setShowConfirm(false);
+    } catch {
+      toast({
+        title: "تعذّر مسح المواد",
+        description: "لم يتم حفظ التغيير. حاول مرة أخرى.",
+        variant: "destructive",
+      });
+    }
   };
 
   // ── Empty / loading states ────────────────────────────────────────────────

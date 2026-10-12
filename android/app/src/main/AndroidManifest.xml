@@ -54,6 +54,9 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <!-- Huawei -->
                 <action android:name="com.huawei.systemmanager.optimize.process.action.BOOT_COMPLETED" />
+                <!-- Recalculate recurring wall-clock alarms if device time zone/time changes -->
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
             </intent-filter>
         </receiver>
 

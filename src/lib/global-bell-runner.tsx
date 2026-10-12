@@ -2,7 +2,12 @@ import { useState, useEffect, useRef } from "react";
 import { useGetDashboard, useListPeriods, getListPeriodsQueryKey } from "@/lib/api-client";
 import { useBellStore } from "./bell-store";
 import { unlockAudio, startBellLoop, setBellEnabled, type BellSound } from "./audio";
-import { useWebBellScheduler, useDutyAlertScheduler, useSpecialDutyScheduler } from "./web-bell-scheduler";
+import {
+  useWebBellScheduler,
+  useDutyAlertScheduler,
+  useSpecialDutyScheduler,
+  useWebSpecialTaskScheduler,
+} from "./web-bell-scheduler";
 import { BellRunnerContext } from "./bell-runner-context";
 import { useCapacitorBellScheduler } from "@/hooks/use-capacitor-bell-scheduler";
 import { isCapacitorAndroid } from "@/lib/capacitor-bell";
@@ -79,6 +84,7 @@ export function GlobalBellRunner({ children }: { children: React.ReactNode }) {
 
   const activeSchedule = dashboard?.activeSchedule;
   const scheduleId = activeSchedule?.id ?? 0;
+  const nativeAndroid = isCapacitorAndroid();
 
   const { data: allPeriods = [] } = useListPeriods(scheduleId, {
     query: { enabled: !!scheduleId, queryKey: getListPeriodsQueryKey(scheduleId) },
@@ -95,9 +101,14 @@ export function GlobalBellRunner({ children }: { children: React.ReactNode }) {
     : [];
 
   // ── Browser foreground bell (interval-based) ────────────────────────────
-  useWebBellScheduler(audioUnlocked, todayLocalPeriods, settings);
-  useDutyAlertScheduler(audioUnlocked, settings);
+  // Android uses AlarmManager for exact, background-safe bells. Running the
+  // foreground Web Audio loop there as well causes same-time alarms to replace
+  // or duplicate one another.
+  const foregroundAudioEnabled = audioUnlocked && !nativeAndroid;
+  useWebBellScheduler(foregroundAudioEnabled, todayLocalPeriods, settings);
+  useDutyAlertScheduler(foregroundAudioEnabled, settings);
   useSpecialDutyScheduler(audioUnlocked, settings);
+  useWebSpecialTaskScheduler(foregroundAudioEnabled, settings);
 
   // ── Capacitor Android native bell (no-op in browser) ───────────────────
   useCapacitorBellScheduler();
