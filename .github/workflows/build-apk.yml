@@ -1,4 +1,4 @@
-name: Build Android APK (BellCraft)
+﻿name: Build Android APK (BellCraft)
 
 on:
   push:
@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Source code ───────────────────────────────────────────────────
+      # â”€â”€ 1. Source code â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Node + pnpm ───────────────────────────────────────────────────
+      # â”€â”€ 2. Node + pnpm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
@@ -30,7 +30,7 @@ jobs:
         env:
           HOME: /root
 
-      # ── 3. Build the React/Vite web bundle ───────────────────────────────
+      # â”€â”€ 3. Build the React/Vite web bundle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Build web app (Vite)
         working-directory: artifacts/bellcraft
         run: pnpm run build
@@ -40,7 +40,7 @@ jobs:
           NODE_ENV: production
           VITE_API_BASE_URL: https://bell-schedule-manager.replit.app
 
-      # ── 4. Java + Android SDK ────────────────────────────────────────────
+      # â”€â”€ 4. Java + Android SDK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -49,7 +49,7 @@ jobs:
           cache: 'gradle'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android platform 36 + build-tools
         run: |
@@ -59,7 +59,7 @@ jobs:
             "build-tools;35.0.0" \
             "platform-tools"
 
-      # ── 5. Capacitor sync ────────────────────────────────────────────────
+      # â”€â”€ 5. Capacitor sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Capacitor sync + fix settings.gradle
         working-directory: artifacts/bellcraft
         run: |
@@ -68,17 +68,17 @@ jobs:
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
-      # ── 6. Signing keystore ───────────────────────────────────────────────
+      # â”€â”€ 6. Signing keystore â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       # Two modes:
-      #   A) KEYSTORE_BASE64 secret is set → decode and use the stored key.
+      #   A) KEYSTORE_BASE64 secret is set â†’ decode and use the stored key.
       #      Required for Play Store publishing and consistent update signatures.
       #      Add these four secrets to your GitHub repository settings:
-      #        KEYSTORE_BASE64  — base64-encoded .jks file  (see step output below)
-      #        STORE_PASSWORD   — keystore password
-      #        KEY_ALIAS        — key alias (e.g. "bellcraft")
-      #        KEY_PASSWORD     — key password
+      #        KEYSTORE_BASE64  â€” base64-encoded .jks file  (see step output below)
+      #        STORE_PASSWORD   â€” keystore password
+      #        KEY_ALIAS        â€” key alias (e.g. "bellcraft")
+      #        KEY_PASSWORD     â€” key password
       #
-      #   B) No secrets → a fresh keystore is generated automatically.
+      #   B) No secrets â†’ a fresh keystore is generated automatically.
       #      The build log prints the base64 of the generated keystore so
       #      you can save it as the KEYSTORE_BASE64 secret for future builds.
       - name: Set up signing keystore
@@ -97,7 +97,7 @@ jobs:
             echo "KEY_ALIAS=$KEY_ALIAS_SECRET"           >> $GITHUB_ENV
             echo "KEY_PASSWORD=$KEY_PASSWORD_SECRET"     >> $GITHUB_ENV
           else
-            echo "No KEYSTORE_BASE64 secret found — generating a fresh keystore"
+            echo "No KEYSTORE_BASE64 secret found â€” generating a fresh keystore"
             keytool -genkey -v \
               -keystore "$KEYSTORE_FILE" \
               -alias     bellcraft \
@@ -112,15 +112,15 @@ jobs:
             echo "KEY_ALIAS=bellcraft"          >> $GITHUB_ENV
             echo "KEY_PASSWORD=bellcraft2024"   >> $GITHUB_ENV
             echo ""
-            echo "════════════════════════════════════════════════════════"
+            echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
             echo "  Copy the text below as the KEYSTORE_BASE64 secret"
-            echo "  (Settings → Secrets → Actions → New repository secret)"
-            echo "════════════════════════════════════════════════════════"
+            echo "  (Settings â†’ Secrets â†’ Actions â†’ New repository secret)"
+            echo "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
             base64 -w0 "$KEYSTORE_FILE"
             echo ""
           fi
 
-      # ── 7. Gradle release build ───────────────────────────────────────────
+      # â”€â”€ 7. Gradle release build â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Create local.properties
         working-directory: artifacts/bellcraft/android
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
@@ -140,10 +140,11 @@ jobs:
           KEY_ALIAS:      ${{ env.KEY_ALIAS }}
           KEY_PASSWORD:   ${{ env.KEY_PASSWORD }}
 
-      # ── 8. Upload APK ─────────────────────────────────────────────────────
+      # â”€â”€ 8. Upload APK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
           name: bellcraft-release-apk
           path: artifacts/bellcraft/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
+
