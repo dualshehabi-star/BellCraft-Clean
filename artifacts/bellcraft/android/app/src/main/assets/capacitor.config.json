@@ -1,0 +1,23 @@
+{
+	"appId": "com.bellcraft.app",
+	"appName": "بيل كرافت",
+	"webDir": "dist/public",
+	"server": {
+		"androidScheme": "https",
+		"cleartext": false,
+		"allowNavigation": []
+	},
+	"android": {
+		"allowMixedContent": false,
+		"captureInput": false,
+		"webContentsDebuggingEnabled": true,
+		"backgroundColor": "#f8fafc"
+	},
+	"plugins": {
+		"LocalNotifications": {
+			"smallIcon": "ic_stat_icon_config_sample",
+			"iconColor": "#1e3a8a",
+			"sound": "classic_bell"
+		}
+	}
+}
