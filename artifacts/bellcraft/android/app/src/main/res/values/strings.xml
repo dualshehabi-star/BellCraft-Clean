@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BellCraft</string>
+    <string name="title_activity_main">BellCraft</string>
+    <string name="package_name">com.bellcraft.app</string>
+    <string name="custom_url_scheme">com.bellcraft.app</string>
+    <string name="widget_timetable_description">صورة الجدول الدراسي</string>
+    <string name="widget_timetable_placeholder">افتح التطبيق\nلتحديث صورة الجدول</string>
+    <string name="widget_holiday_badge">🌙 إجازة اليوم</string>
+</resources>

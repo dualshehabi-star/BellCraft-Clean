@@ -1,23 +1,85 @@
+# ── Dependencies ─────────────────────────────────────────────
 node_modules/
+.pnp
+.pnp.js
+
+# ── Build outputs ────────────────────────────────────────────
+/generated-artifacts/
 dist/
+build/
+out/
+out-tsc/
+tmp/
 
-# Android build outputs
-android/app/build/
-android/.gradle/
-android/capacitor-cordova-android-plugins/
-
-# iOS build outputs
-ios/App/Pods/
-ios/App/build/
-ios/App/output/
-ios/DerivedData/
-ios/App/xcuserdata/
-ios/App/App.xcworkspace/
-ios/App/App/public/
-ios/App/App/capacitor.config.json
-ios/App/App/config.xml
-ios/capacitor-cordova-ios-plugins/
-
+# ── TypeScript incremental build ─────────────────────────────
 *.tsbuildinfo
+
+# ── Vite / esbuild cache ─────────────────────────────────────
+.vite/
+.cache/
+
+# ── Expo / React Native ──────────────────────────────────────
+.expo/
+.expo-shared/
+artifacts/bellcraft-mobile/.expo/
+
+# ── Android build artifacts ──────────────────────────────────
+# (handled by artifacts/bellcraft/android/.gitignore as well)
+artifacts/bellcraft/android/.gradle/
+artifacts/bellcraft/android/build/
+artifacts/bellcraft/android/app/build/
+artifacts/bellcraft/android/local.properties
+artifacts/bellcraft/android/app/src/main/assets/public/
+artifacts/bellcraft/android/app/src/main/assets/capacitor.config.json
+artifacts/bellcraft/android/app/src/main/assets/capacitor.plugins.json
+artifacts/bellcraft/android/app/src/main/res/xml/config.xml
+artifacts/bellcraft/android/capacitor-cordova-android-plugins/
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-error.log
+pnpm-debug.log*
+
+# ── OS files ─────────────────────────────────────────────────
 .DS_Store
-*.local
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── IDEs ─────────────────────────────────────────────────────
+.idea/
+.idea/workspace.xml
+.idea/tasks.xml
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ── Coverage / test output ───────────────────────────────────
+coverage/
+/libpeerconnection.log
+testem.log
+
+# ── Misc ─────────────────────────────────────────────────────
+.sass-cache/
+connect.lock
+/typings
+
+# ── Replit internals (not source code) ───────────────────────
+.cache/
+.local/
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+
+# ── Uploaded/attached assets (kept locally, not needed in repo)
+attached_assets/

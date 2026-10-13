@@ -1,0 +1,665 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: BellCraft API - Smart School Schedule Manager
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: schedules
+    description: Schedule management
+  - name: subjects
+    description: Subject management
+  - name: periods
+    description: Period management
+  - name: dashboard
+    description: Dashboard summary
+  - name: settings
+    description: App settings
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /schedules:
+    get:
+      operationId: listSchedules
+      tags: [schedules]
+      summary: List all schedules
+      responses:
+        "200":
+          description: List of schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Schedule"
+    post:
+      operationId: createSchedule
+      tags: [schedules]
+      summary: Create a new schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleInput"
+      responses:
+        "201":
+          description: Created schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+
+  /schedules/{id}:
+    get:
+      operationId: getSchedule
+      tags: [schedules]
+      summary: Get a schedule by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateSchedule
+      tags: [schedules]
+      summary: Update a schedule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleUpdate"
+      responses:
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteSchedule
+      tags: [schedules]
+      summary: Delete a schedule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /schedules/{id}/copy:
+    post:
+      operationId: copySchedule
+      tags: [schedules]
+      summary: Copy a schedule with all its periods
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "201":
+          description: Copied schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: Not found
+
+  /schedules/{scheduleId}/subject-assignments:
+    delete:
+      operationId: clearSubjectAssignments
+      tags: [schedules]
+      summary: Clear all subject assignments from a schedule's periods
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Subjects cleared
+        "404":
+          description: Schedule not found
+
+  /schedules/{id}/activate:
+    patch:
+      operationId: activateSchedule
+      tags: [schedules]
+      summary: Set a schedule as active
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Activated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Schedule"
+        "404":
+          description: Not found
+
+  /schedules/{scheduleId}/periods:
+    get:
+      operationId: listPeriods
+      tags: [periods]
+      summary: List periods for a schedule
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of periods
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Period"
+    delete:
+      operationId: clearSchedulePeriods
+      tags: [periods]
+      summary: Delete all periods for a schedule
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: All periods deleted
+    post:
+      operationId: createPeriod
+      tags: [periods]
+      summary: Create a period in a schedule
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PeriodInput"
+      responses:
+        "201":
+          description: Created period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Period"
+
+  /periods/{id}:
+    patch:
+      operationId: updatePeriod
+      tags: [periods]
+      summary: Update a period
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PeriodUpdate"
+      responses:
+        "200":
+          description: Updated period
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Period"
+        "404":
+          description: Not found
+    delete:
+      operationId: deletePeriod
+      tags: [periods]
+      summary: Delete a period
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /subjects:
+    get:
+      operationId: listSubjects
+      tags: [subjects]
+      summary: List all subjects
+      responses:
+        "200":
+          description: List of subjects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Subject"
+    post:
+      operationId: createSubject
+      tags: [subjects]
+      summary: Create a subject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubjectInput"
+      responses:
+        "201":
+          description: Created subject
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subject"
+
+  /subjects/{id}:
+    patch:
+      operationId: updateSubject
+      tags: [subjects]
+      summary: Update a subject
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubjectUpdate"
+      responses:
+        "200":
+          description: Updated subject
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subject"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteSubject
+      tags: [subjects]
+      summary: Delete a subject
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get dashboard summary
+      responses:
+        "200":
+          description: Dashboard summary with active schedule, today's periods, next bell
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get app settings
+      responses:
+        "200":
+          description: App settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update app settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppSettingsUpdate"
+      responses:
+        "200":
+          description: Updated app settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Schedule:
+      type: object
+      required: [id, name, isActive, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        activeDays:
+          type: array
+          items:
+            type: integer
+          description: "Days of week: 0=Sunday, 1=Monday, ... 6=Saturday"
+        createdAt:
+          type: string
+        updatedAt:
+          type: ["string", "null"]
+
+    ScheduleInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        activeDays:
+          type: array
+          items:
+            type: integer
+
+    ScheduleUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        activeDays:
+          type: array
+          items:
+            type: integer
+
+    Subject:
+      type: object
+      required: [id, name, color]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        color:
+          type: string
+        teacher:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    SubjectInput:
+      type: object
+      required: [name, color]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        color:
+          type: string
+        teacher:
+          type: string
+
+    SubjectUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        color:
+          type: string
+        teacher:
+          type: string
+
+    Period:
+      type: object
+      required: [id, scheduleId, startTime, endTime, dayOfWeek]
+      properties:
+        id:
+          type: integer
+        scheduleId:
+          type: integer
+        subjectId:
+          type: ["integer", "null"]
+        subjectName:
+          type: ["string", "null"]
+        subjectColor:
+          type: ["string", "null"]
+        dayOfWeek:
+          type: integer
+          description: "0=Sunday, 1=Monday, ... 6=Saturday"
+        startTime:
+          type: string
+          description: "HH:MM format"
+        endTime:
+          type: string
+          description: "HH:MM format"
+        label:
+          type: ["string", "null"]
+          description: "Optional custom label for this period"
+        alertMinutesBefore:
+          type: integer
+          description: "Minutes before period to ring the bell alert"
+        createdAt:
+          type: string
+
+    PeriodInput:
+      type: object
+      required: [startTime, endTime, dayOfWeek]
+      properties:
+        subjectId:
+          type: integer
+        dayOfWeek:
+          type: integer
+        startTime:
+          type: string
+        endTime:
+          type: string
+        label:
+          type: string
+        alertMinutesBefore:
+          type: integer
+
+    PeriodUpdate:
+      type: object
+      properties:
+        subjectId:
+          type: ["integer", "null"]
+        dayOfWeek:
+          type: integer
+        startTime:
+          type: string
+        endTime:
+          type: string
+        label:
+          type: string
+        alertMinutesBefore:
+          type: integer
+
+    DashboardSummary:
+      type: object
+      required: [totalSchedules, totalSubjects, totalPeriods]
+      properties:
+        totalSchedules:
+          type: integer
+        totalSubjects:
+          type: integer
+        totalPeriods:
+          type: integer
+        activeSchedule:
+          $ref: "#/components/schemas/Schedule"
+          nullable: true
+        todayPeriods:
+          type: array
+          items:
+            $ref: "#/components/schemas/Period"
+        nextPeriod:
+          $ref: "#/components/schemas/Period"
+          nullable: true
+        currentPeriod:
+          $ref: "#/components/schemas/Period"
+          nullable: true
+
+    AppSettings:
+      type: object
+      required: [id, bellSound, volume, autoRing, vacationMode, leadTimeMin, ringDurationSec, maxVolume, preStartEnabled, preStartRepeat, preEndEnabled, preEndMinBefore, preEndSound, preEndDurationSec, preEndRepeat, endEnabled, endSound, endDurationSec, endRepeat]
+      properties:
+        id:
+          type: integer
+        bellSound:
+          type: string
+        volume:
+          type: number
+        autoRing:
+          type: boolean
+        vacationMode:
+          type: boolean
+        leadTimeMin:
+          type: integer
+        ringDurationSec:
+          type: integer
+        maxVolume:
+          type: boolean
+        preStartEnabled:
+          type: boolean
+        preStartRepeat:
+          type: integer
+        preEndEnabled:
+          type: boolean
+        preEndMinBefore:
+          type: integer
+        preEndSound:
+          type: string
+        preEndDurationSec:
+          type: integer
+        preEndRepeat:
+          type: integer
+        endEnabled:
+          type: boolean
+        endSound:
+          type: string
+        endDurationSec:
+          type: integer
+        endRepeat:
+          type: integer
+
+    AppSettingsUpdate:
+      type: object
+      properties:
+        bellSound:
+          type: string
+        volume:
+          type: number
+        autoRing:
+          type: boolean
+        vacationMode:
+          type: boolean
+        leadTimeMin:
+          type: integer
+        ringDurationSec:
+          type: integer
+        maxVolume:
+          type: boolean
+        preStartEnabled:
+          type: boolean
+        preStartRepeat:
+          type: integer
+        preEndEnabled:
+          type: boolean
+        preEndMinBefore:
+          type: integer
+        preEndSound:
+          type: string
+        preEndDurationSec:
+          type: integer
+        preEndRepeat:
+          type: integer
+        endEnabled:
+          type: boolean
+        endSound:
+          type: string
+        endDurationSec:
+          type: integer
+        endRepeat:
+          type: integer
